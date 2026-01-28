@@ -11,8 +11,8 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import random
 
 # ================== НАСТРОЙКИ ==================
-TOKEN = 'YOUR_BOT_TOKEN_HERE'           # ← замени на свой от @BotFather
-YOUR_CHAT_ID = 123456789                # ← твой Telegram ID (узнай через @getmyid_bot)
+TOKEN = '8244939586:AAHekS_W72RIedGteS1NqVymcR-SI6-xfy4'           # ← замени на свой от @BotFather
+YOUR_CHAT_ID = 1300197924                # ← твой Telegram ID (узнай через @getmyid_bot)
 KEYWORDS = ['telegram', 'бот', 'python', 'aiogram', 'parser', 'чат-бот', 'разработка']  # добавляй свои
 
 ua = UserAgent()
