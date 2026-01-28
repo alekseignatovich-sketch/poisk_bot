@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from datetime import datetime
 from aiogram import Bot, Dispatcher
 from aiogram.filters import Command
 from aiogram.types import Message
@@ -11,42 +12,48 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import random
 
 # ================== НАСТРОЙКИ ==================
-TOKEN = '8244939586:AAHPQWBgXerv9-b1VsCTlHq7h8V9dLnupbQ'           # ← замени на свой от @BotFather
-YOUR_CHAT_ID = 1300197924                # ← твой Telegram ID (узнай через @getmyid_bot)
-KEYWORDS = ['telegram', 'бот', 'python', 'aiogram', 'parser', 'чат-бот', 'разработка']  # добавляй свои
+TOKEN = '8244939586:AAFliEkZin4YSJiZy5Bn2w39jqlUqMsq5wo'           # ← ТОЛЬКО НОВЫЙ ТОКЕН после пересоздания бота!!!
+YOUR_CHAT_ID = 1300197924               # ← ТВОЙ chat ID (положительное число)
+
+KEYWORDS = [
+    'telegram', 'бот', 'python', 'aiogram', 'parser', 'чат-бот',
+    'разработка', 'скрипт', 'автоматизация', 'freelance'
+]  # добавляй/убирай свои ключевые слова
 
 ua = UserAgent()
 DB_FILE = 'projects.db'
+CHECK_INTERVAL_MIN = 15  # каждые 15 минут — оптимально для Railway
 
-# ================== БАЗА ДАННЫХ ==================
+# ================== ИНИЦИАЛИЗАЦИЯ БД ==================
 async def init_db():
     async with aiosqlite.connect(DB_FILE) as db:
         await db.execute('CREATE TABLE IF NOT EXISTS sent (link TEXT PRIMARY KEY)')
         await db.commit()
 
-# ================== ПАРСЕРЫ (селекторы — проверь в браузере F12, они могут меняться!) ==================
+# ================== ПАРСЕРЫ ==================
 async def parse_fl_ru():
     url = 'https://www.fl.ru/projects/?kind=5'
     headers = {'User-Agent': ua.random}
     try:
-        r = requests.get(url, headers=headers, timeout=15)
+        r = requests.get(url, headers=headers, timeout=20)
         r.raise_for_status()
         soup = BeautifulSoup(r.text, 'html.parser')
         
-        # Актуальные селекторы на 2026 (проверь! часто меняются)
-        projects = soup.select('div.b-post')  # или 'div.project-item', 'article.project'
+        # Гибкие селекторы (несколько вариантов)
+        projects = soup.select('div.b-post, div.project-item, article.project, div.b-layout__project')
         new_projects = []
         
         async with aiosqlite.connect(DB_FILE) as db:
-            for proj in projects[:8]:  # берём свежие
-                title_tag = proj.select_one('a.b-post__link, a.project-title, h2 a')
+            for proj in projects[:10]:
+                title_tag = proj.select_one('a.b-post__link, a.project-title, h2 a, .title a')
                 if not title_tag:
                     continue
                 title = title_tag.get_text(strip=True)
-                link = 'https://www.fl.ru' + title_tag['href'] if title_tag['href'].startswith('/') else title_tag['href']
+                href = title_tag['href']
+                link = 'https://www.fl.ru' + href if href.startswith('/') else href
                 
-                desc_tag = proj.select_one('div.b-post__txt, div.description, p')
-                desc = desc_tag.get_text(strip=True)[:250] if desc_tag else ''
+                desc_tag = proj.select_one('div.b-post__txt, div.description, p, .descr')
+                desc = desc_tag.get_text(strip=True)[:300] if desc_tag else ''
                 
                 text = (title + ' ' + desc).lower()
                 if any(kw.lower() in text for kw in KEYWORDS):
@@ -54,32 +61,33 @@ async def parse_fl_ru():
                         if await cursor.fetchone() is None:
                             await db.execute("INSERT INTO sent (link) VALUES (?)", (link,))
                             await db.commit()
-                            new_projects.append(f"**FL.ru**\n{title}\n{link}\n{desc[:150]}...")
+                            new_projects.append(f"**FL.ru** | {title}\n{link}\n{desc[:200]}...")
         return new_projects
     except Exception as e:
-        logging.error(f"FL.ru error: {e}")
+        logging.error(f"FL.ru parse error: {e}")
         return []
 
 async def parse_kwork():
-    url = 'https://kwork.ru/projects?c=41'  # категория "Скрипты и боты"
+    url = 'https://kwork.ru/projects?c=41'
     headers = {'User-Agent': ua.random}
     try:
-        r = requests.get(url, headers=headers, timeout=15)
+        r = requests.get(url, headers=headers, timeout=20)
         soup = BeautifulSoup(r.text, 'html.parser')
         
-        cards = soup.select('div.want-card, div.project-card, div.wants__item')
+        cards = soup.select('div.want-card, div.project-card, div.wants__item, .card')
         new_projects = []
         
         async with aiosqlite.connect(DB_FILE) as db:
-            for card in cards[:8]:
-                title_tag = card.select_one('h3.wants-card__header-title a, a.want__title')
+            for card in cards[:10]:
+                title_tag = card.select_one('h3 a, a.want__title, .title a')
                 if not title_tag:
                     continue
                 title = title_tag.get_text(strip=True)
-                link = 'https://kwork.ru' + title_tag['href'] if title_tag['href'].startswith('/') else title_tag['href']
+                href = title_tag['href']
+                link = 'https://kwork.ru' + href if href.startswith('/') else href
                 
-                desc_tag = card.select_one('div.wants-card__description, div.want__desc')
-                desc = desc_tag.get_text(strip=True)[:250] if desc_tag else ''
+                desc_tag = card.select_one('div.wants-card__description, div.want__desc, .description')
+                desc = desc_tag.get_text(strip=True)[:300] if desc_tag else ''
                 
                 text = (title + ' ' + desc).lower()
                 if any(kw.lower() in text for kw in KEYWORDS):
@@ -87,53 +95,68 @@ async def parse_kwork():
                         if await cursor.fetchone() is None:
                             await db.execute("INSERT INTO sent (link) VALUES (?)", (link,))
                             await db.commit()
-                            new_projects.append(f"**Kwork**\n{title}\n{link}\n{desc[:150]}...")
+                            new_projects.append(f"**Kwork** | {title}\n{link}\n{desc[:200]}...")
         return new_projects
     except Exception as e:
-        logging.error(f"Kwork error: {e}")
+        logging.error(f"Kwork parse error: {e}")
         return []
 
-# Добавь аналогично другие биржи: Freelance.ru, Weblancer.net и т.д.
-# Пример для Freelance.ru (адаптируй селекторы)
-async def parse_freelance_ru():
-    url = 'https://www.freelance.ru/projects'
-    # ... аналогичный код, селекторы: div.project, a.title и т.д.
-    return []  # пока заглушка — реализуй сам по аналогии
-
-# ================== ШЕДУЛЕР + БОТ ==================
+# ================== ШЕДУЛЕР И БОТ ==================
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 scheduler = AsyncIOScheduler()
 
-@scheduler.scheduled_job('interval', minutes=12)  # каждые 12 мин, чтобы не блочило
+@scheduler.scheduled_job('interval', minutes=CHECK_INTERVAL_MIN)
 async def check_all():
+    logging.info(f"Проверка бирж начата: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     results = []
     results += await parse_fl_ru()
     results += await parse_kwork()
-    # results += await parse_freelance_ru()  # и другие
+    # results += await parse_freelance_ru()  # добавь когда будешь готов
     
     for msg in results:
         try:
             await bot.send_message(YOUR_CHAT_ID, msg, disable_web_page_preview=True)
+            logging.info(f"Отправлено: {msg[:50]}...")
         except Exception as e:
-            logging.error(f"Send error: {e}")
+            logging.error(f"Ошибка отправки: {e}")
 
-# Команды для управления
+# Команды
 @dp.message(Command("start"))
 async def start(message: Message):
-    await message.answer("Бот запущен! Я ищу заказы по ключам: " + ", ".join(KEYWORDS))
+    await message.answer(
+        "Парсер запущен!\n"
+        f"Ключевые слова: {', '.join(KEYWORDS)}\n"
+        "Буду присылать новые заказы каждые 15 минут."
+    )
 
-@dp.message(Command("keywords"))
-async def show_keywords(message: Message):
-    await message.answer("Текущие ключи:\n" + "\n".join(KEYWORDS))
+@dp.message(Command("status"))
+async def status(message: Message):
+    await message.answer("Бот работает. Последняя проверка: скоро...")
 
 # ================== ЗАПУСК ==================
 async def main():
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
     await init_db()
-    await bot.send_message(YOUR_CHAT_ID, "Парсер фриланс-бирж запущен! Ожидаю новые проекты...")
+    
+    try:
+        await bot.send_message(YOUR_CHAT_ID, "Парсер фриланс-бирж запущен! Ожидаю новые проекты...")
+        logging.info("Стартовое сообщение отправлено")
+    except Exception as e:
+        logging.warning(f"Не удалось отправить стартовое сообщение: {e} (возможно, нужно /start боту)")
+
     scheduler.start()
-    await dp.start_polling(bot)
+    logging.info("Scheduler запущен. Интервал: 15 мин")
+
+    # Polling (текущий режим)
+    await dp.start_polling(bot, skip_updates=True)
+
+    # Если хочешь перейти на webhook (рекомендую для Railway):
+    # await dp.start_webhook(
+    #     webhook_path=f"/webhook/{TOKEN}",
+    #     webhook_url="https://твой-домен.up.railway.app/webhook",
+    #     skip_updates=True
+    # )
 
 if __name__ == '__main__':
     asyncio.run(main())
