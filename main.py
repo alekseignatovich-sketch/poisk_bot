@@ -1,26 +1,27 @@
 import os
 import asyncio
+import base64
 import logging
-import urllib.request
-import ssl
 from telethon import TelegramClient
 import aiosqlite
 from aiogram import Bot, Dispatcher
 from aiogram.filters import Command
 from aiogram.types import Message
 
-# ================== ЗАГРУЗКА СЕССИИ ИЗ GITHUB GIST ==================
-# ⚠️ ЗАМЕНИТЕ ЭТУ ССЫЛКУ НА ВАШУ СЕКРЕТНУЮ GIST (Raw URL)!
-GIST_SESSION_URL = "https://gist.github.com/alekseignatovich-sketch/a1e60714b519f4869c2471711cc86b38.js"
+# ================== ВОССТАНОВЛЕНИЕ СЕССИИ ИЗ 2 ЧАСТЕЙ ==================
+session_part1 = os.getenv('SESSION_PART1', '')
+session_part2 = os.getenv('SESSION_PART2', '')
 
-try:
-    # Обход SSL-проверки для GitHub (безопасно для публичных Gist)
-    context = ssl._create_unverified_context()
-    urllib.request.urlretrieve(GIST_SESSION_URL, 'railway_session.session', reporthook=lambda *args: None)
-    print("✅ Сессия загружена из GitHub Gist")
-except Exception as e:
-    print(f"⚠️ Не удалось загрузить сессию: {e}")
-    print("💡 Совет: создайте секретный Gist и вставьте Raw URL в переменную GIST_SESSION_URL")
+if session_part1:
+    try:
+        full_base64 = session_part1 + session_part2
+        session_data = base64.b64decode(full_base64)
+        with open('railway_session.session', 'wb') as f:
+            f.write(session_data)
+        print(f"✅ Сессия восстановлена ({len(session_data)} байт)")
+    except Exception as e:
+        print(f"❌ Ошибка восстановления сессии: {e}")
+        print("💡 Проверьте: SESSION_PART1 и SESSION_PART2 в Variables Railway")
 
 # ================== ПЕРЕМЕННЫЕ ОКРУЖЕНИЯ ==================
 TOKEN = os.getenv('BOT_TOKEN')
@@ -84,23 +85,18 @@ async def main():
     logger.info("🚀 Запуск парсера...")
     await init_db()
     
-    # Подключаемся к Telegram
     await client.connect()
-    
     if not await client.is_user_authorized():
         logger.error("❌ Сессия недействительна! Проверьте:")
-        logger.error("1. Правильность ссылки GIST_SESSION_URL")
-        logger.error("2. Что файл railway_session.session загружен в Gist")
+        logger.error("1. SESSION_PART1 и SESSION_PART2 в Variables")
+        logger.error("2. Что части скопированы полностью (без обрезки)")
         logger.error("3. Что сессия не устарела (аккаунт не выходил из системы)")
         return
     
-    logger.info("✅ Авторизован через сессию из Gist")
+    logger.info("✅ Авторизован через сессию")
     await bot.send_message(NOTIFY_CHAT_ID, "✅ Парсер запущен и мониторит каналы")
     
-    # Первая проверка
     await check_channels()
-    
-    # Запуск бота
     await dp.start_polling(bot, skip_updates=True)
 
 if __name__ == '__main__':
