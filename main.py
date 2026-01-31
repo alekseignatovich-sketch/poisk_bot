@@ -3,12 +3,13 @@ import asyncio
 import base64
 import logging
 from telethon import TelegramClient
+from telethon.errors import AuthKeyUnregisteredError
 import aiosqlite
 from aiogram import Bot, Dispatcher
 from aiogram.filters import Command
 from aiogram.types import Message
 
-# ================== ВОССТАНОВЛЕНИЕ СЕССИИ ИЗ 2 ЧАСТЕЙ ==================
+# ================== ВОССТАНОВЛЕНИЕ СЕССИИ ==================
 session_part1 = os.getenv('SESSION_PART1', '')
 session_part2 = os.getenv('SESSION_PART2', '')
 
@@ -20,14 +21,15 @@ if session_part1:
             f.write(session_data)
         print(f"✅ Сессия восстановлена ({len(session_data)} байт)")
     except Exception as e:
-        print(f"❌ Ошибка восстановления сессии: {e}")
-        print("💡 Проверьте: SESSION_PART1 и SESSION_PART2 в Variables Railway")
+        print(f"❌ Ошибка восстановления: {e}")
+        exit(1)
 
 # ================== ПЕРЕМЕННЫЕ ОКРУЖЕНИЯ ==================
 TOKEN = os.getenv('BOT_TOKEN')
 NOTIFY_CHAT_ID = int(os.getenv('YOUR_CHAT_ID'))
-API_ID = int(os.getenv('API_ID'))
-API_HASH = os.getenv('API_HASH')
+API_ID = int(os.getenv('API_ID', '30822050'))  # Убедитесь, что совпадает с auth.py!
+API_HASH = os.getenv('API_HASH', '656e7cb50ff9753230d609d0e2a6b701')  # Убедитесь, что совпадает с auth.py!
+PHONE = os.getenv('PHONE', '+375291930214')
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s | %(message)s')
 logger = logging.getLogger(__name__)
@@ -68,7 +70,7 @@ async def check_channels():
 
 @dp.message(Command("start"))
 async def start(message: Message):
-    await message.answer("✅ Парсер активен!\n🔍 Мониторинг каналов на заказы по Python/Telegram")
+    await message.answer("✅ Парсер активен!\n🔍 Мониторинг каналов на заказы")
 
 @dp.message(Command("check"))
 async def check(message: Message):
@@ -83,17 +85,51 @@ async def check(message: Message):
 
 async def main():
     logger.info("🚀 Запуск парсера...")
+    logger.info(f"📱 Номер: {PHONE}")
+    logger.info(f"🔑 API_ID: {API_ID}")
+    logger.info(f"🔐 API_HASH: {API_HASH[:8]}...")
+    
     await init_db()
     
+    # Подключаемся
     await client.connect()
-    if not await client.is_user_authorized():
-        logger.error("❌ Сессия недействительна! Проверьте:")
-        logger.error("1. SESSION_PART1 и SESSION_PART2 в Variables")
-        logger.error("2. Что части скопированы полностью (без обрезки)")
-        logger.error("3. Что сессия не устарела (аккаунт не выходил из системы)")
+    logger.info("🔌 Подключено к Telegram")
+    
+    # Проверяем авторизацию
+    try:
+        is_auth = await client.is_user_authorized()
+        logger.info(f"✅ Авторизован: {is_auth}")
+        
+        if not is_auth:
+            logger.error("❌ Сессия недействительна!")
+            logger.error("ВОЗМОЖНЫЕ ПРИЧИНЫ:")
+            logger.error("1. API_ID/API_HASH не совпадают с теми, что использовались при создании сессии")
+            logger.error("2. Аккаунт был разлогинен на другом устройстве")
+            logger.error("3. Сессия создана для другого номера телефона")
+            
+            # Попытка запросить код (только для отладки!)
+            try:
+                await client.send_code_request(PHONE)
+                logger.info("📤 Запрошен новый код подтверждения")
+                await bot.send_message(
+                    NOTIFY_CHAT_ID,
+                    "⚠️ Сессия недействительна. Требуется повторная авторизация.\n"
+                    "Отправьте /start для получения кода."
+                )
+            except Exception as e:
+                logger.error(f"❌ Невозможно запросить код: {e}")
+            
+            return
+        
+    except AuthKeyUnregisteredError:
+        logger.error("❌ Сессия удалена сервером Telegram (AuthKeyUnregisteredError)")
+        logger.error("Требуется полная повторная авторизация с правильными API_ID/API_HASH")
+        return
+    except Exception as e:
+        logger.exception(f"❌ Ошибка проверки авторизации: {e}")
         return
     
-    logger.info("✅ Авторизован через сессию")
+    logger.info("✅ Авторизация успешна через сессию")
     await bot.send_message(NOTIFY_CHAT_ID, "✅ Парсер запущен и мониторит каналы")
     
     await check_channels()
