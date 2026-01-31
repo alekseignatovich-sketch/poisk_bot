@@ -9,12 +9,20 @@ from aiogram.types import Message
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 # ================== НАСТРОЙКИ ==================
-TOKEN = '8244939586:AAFliEkZin4YSJiZy5Bn2w39jqlUqMsq5wo'  # Токен твоего Telegram-бота (для отправки тебе уведомлений)
-YOUR_CHAT_ID = -1003880706769       # Твой chat ID
+import os
+from dotenv import load_dotenv
 
-API_ID = 30822050               # Твой API ID с my.telegram.org
-API_HASH = '656e7cb50ff9753230d609d0e2a6b701'  # Твой API HASH
-PHONE = '+3752912930214'          # Твой номер TG (для userbot)
+load_dotenv()  # Загружает переменные из .env файла
+
+TOKEN = os.getenv('BOT_TOKEN')
+YOUR_CHAT_ID = int(os.getenv('YOUR_CHAT_ID', '0'))
+API_ID = int(os.getenv('API_ID', '0'))
+API_HASH = os.getenv('API_HASH')
+PHONE = os.getenv('PHONE')
+
+# Проверка обязательных переменных
+if not all([TOKEN, YOUR_CHAT_ID, API_ID, API_HASH, PHONE]):
+    raise ValueError("❌ Не хватает переменных окружения! Добавьте секреты в Codespaces Settings.")
 
 KEYWORDS = [
     'telegram', 'бот', 'python', 'aiogram', 'parser', 'чат-бот',
