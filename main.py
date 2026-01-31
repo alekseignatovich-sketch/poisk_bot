@@ -3,11 +3,7 @@ import asyncio
 import logging
 from datetime import datetime
 from telethon import TelegramClient
-from telethon.errors import (
-    SessionPasswordNeededError,
-    PhoneCodeInvalidError,
-    FloodWaitError
-)
+from telethon.errors import SessionPasswordNeededError, PhoneCodeInvalidError, FloodWaitError
 import aiosqlite
 from aiogram import Bot, Dispatcher
 from aiogram.filters import Command
@@ -34,25 +30,13 @@ if not all([TOKEN, YOUR_CHAT_ID, API_ID, API_HASH, PHONE]):
     raise RuntimeError(f"❌ Отсутствуют переменные: {', '.join(missing)}")
 
 # ================== НАСТРОЙКИ ==================
-KEYWORDS = [
-    'telegram', 'бот', 'python', 'aiogram', 'parser', 'чат-бот',
-    'разработка', 'скрипт', 'автоматизация', 'freelance', 'заказ', 'проект'
-]
-
-CHANNELS = [
-    'freelansim_ru', 'TGwork', 'partnerkin_job', 'work_on', 'FreeVacanciesIT',
-    'ru_pythonjobs', 'python_job', 'programming_orders'
-]
-
+KEYWORDS = ['telegram', 'бот', 'python', 'aiogram', 'parser', 'чат-бот', 'разработка', 'скрипт', 'автоматизация', 'freelance', 'заказ', 'проект']
+CHANNELS = ['freelansim_ru', 'TGwork', 'partnerkin_job', 'work_on', 'FreeVacanciesIT', 'ru_pythonjobs', 'python_job', 'programming_orders']
 DB_FILE = 'projects.db'
 CHECK_INTERVAL_MIN = 15
 
 # ================== ЛОГИРОВАНИЕ ==================
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s | %(levelname)-8s | %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s | %(levelname)-8s | %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 logger = logging.getLogger(__name__)
 
 # ================== FSM ДЛЯ АВТОРИЗАЦИИ ==================
@@ -70,25 +54,18 @@ is_authorized = False
 # ================== БАЗА ДАННЫХ ==================
 async def init_db():
     async with aiosqlite.connect(DB_FILE) as db:
-        await db.execute('''
-            CREATE TABLE IF NOT EXISTS sent (
-                message_id TEXT PRIMARY KEY,
-                channel TEXT,
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
+        await db.execute('CREATE TABLE IF NOT EXISTS sent (message_id TEXT PRIMARY KEY, channel TEXT, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)')
         await db.commit()
     logger.info("✅ База данных инициализирована")
 
 # ================== АВТОРИЗАЦИЯ ==================
 async def safe_send_code():
-    """Безопасный запрос кода с обработкой FloodWait"""
     try:
         await client.send_code_request(PHONE)
         return True, None
     except FloodWaitError as e:
         wait_time = e.seconds
-        logger.warning(f"⏳ FloodWait: подождите {wait_time} секунд перед запросом кода")
+        logger.warning(f"⏳ FloodWait: подождите {wait_time} секунд")
         return False, wait_time
     except Exception as e:
         logger.error(f"❌ Ошибка запроса кода: {e}")
@@ -105,28 +82,19 @@ async def cmd_start(message: Message, state: FSMContext):
     global is_authorized
     
     if is_authorized:
-        await message.answer(
-            "✅ Парсер уже запущен!\n\n"
-            f"🔍 Мониторинг {len(CHANNELS)} каналов\n"
-            f"⏱️ Проверка каждые {CHECK_INTERVAL_MIN} мин"
-        )
+        await message.answer(f"✅ Парсер уже запущен!\n🔍 Мониторинг {len(CHANNELS)} каналов\n⏱️ Проверка каждые {CHECK_INTERVAL_MIN} мин")
         return
     
-    # Проверяем сессию
     if await client.is_user_authorized():
         is_authorized = True
         await message.answer("✅ Уже авторизован — парсер активен!")
         logger.info("✅ Авторизация восстановлена из сессии")
         return
     
-    # Запрашиваем код
     success, wait_time = await safe_send_code()
     if not success:
         if wait_time:
-            await message.answer(
-                f"⏳ Telegram требует паузу {wait_time} секунд из-за частых запросов.\n\n"
-                f"Попробуйте снова через {wait_time // 60 + 1} минут."
-            )
+            await message.answer(f"⏳ Подождите {wait_time} секунд перед повторной попыткой.\nПопробуйте /start через {wait_time // 60 + 1} минут.")
         else:
             await message.answer("❌ Не удалось запросить код. Проверьте номер телефона.")
         return
@@ -155,28 +123,16 @@ async def handle_code(message: Message, state: FSMContext):
         global is_authorized
         is_authorized = True
         await state.clear()
-        
         await message.answer("✅ Авторизация успешна! Парсер запущен.")
         logger.info("✅ Авторизация завершена")
-        
-        # Отправляем стартовое уведомление
-        await bot.send_message(
-            chat_id=YOUR_CHAT_ID,
-            text=(
-                "🚀 Парсер TG-каналов активен!\n\n"
-                f"🔍 Мониторинг {len(CHANNELS)} каналов\n"
-                f"⏱️ Первый поиск через {CHECK_INTERVAL_MIN} мин\n"
-                f"🕒 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-            )
-        )
-        
+        await bot.send_message(YOUR_CHAT_ID, f"🚀 Парсер активен!\n🔍 {len(CHANNELS)} каналов\n⏱️ Проверка каждые {CHECK_INTERVAL_MIN} мин")
     except PhoneCodeInvalidError:
         await message.answer("❌ Неверный код. Попробуйте ещё раз:")
     except SessionPasswordNeededError:
         await state.set_state(AuthStates.waiting_for_password)
-        await message.answer("🔐 Требуется пароль двухфакторной аутентификации:")
+        await message.answer("🔐 Требуется пароль 2FA:")
     except FloodWaitError as e:
-        await message.answer(f"⏳ Слишком много попыток. Подождите {e.seconds} секунд и попробуйте /start")
+        await message.answer(f"⏳ Подождите {e.seconds} секунд и попробуйте /start")
     except Exception as e:
         logger.error(f"❌ Ошибка авторизации: {e}")
         await message.answer(f"❌ Ошибка: {str(e)[:200]}")
@@ -185,7 +141,6 @@ async def handle_code(message: Message, state: FSMContext):
 async def handle_password(message: Message, state: FSMContext):
     if message.chat.id != YOUR_CHAT_ID:
         return
-    
     try:
         await client.sign_in(password=message.text.strip())
         global is_authorized
@@ -194,42 +149,29 @@ async def handle_password(message: Message, state: FSMContext):
         await message.answer("✅ Авторизация с 2FA успешна!")
         logger.info("✅ Авторизация с паролем завершена")
     except Exception as e:
-        await message.answer(f"❌ Неверный пароль: {str(e)[:100]}\n\nПопробуйте ещё раз:")
+        await message.answer(f"❌ Неверный пароль. Попробуйте ещё раз:")
 
 # ================== ГЛАВНАЯ ФУНКЦИЯ ==================
 async def main():
     logger.info("=" * 50)
-    logger.info("🚀 ЗАПУСК ПАРСЕРА (без интерактивного ввода)")
+    logger.info("🚀 ЗАПУСК ПАРСЕРА (Railway Edition)")
     logger.info("=" * 50)
     
     await init_db()
-    
-    # Подключаемся БЕЗ авторизации
     await client.connect()
     logger.info("🔌 Подключено к Telegram")
     
-    # Проверяем существующую сессию
     global is_authorized
     is_authorized = await client.is_user_authorized()
     
     if is_authorized:
         logger.info("✅ Авторизация восстановлена из сессии")
-        await bot.send_message(
-            chat_id=YOUR_CHAT_ID,
-            text="✅ Парсер возобновил работу после перезапуска!"
-        )
+        await bot.send_message(YOUR_CHAT_ID, "✅ Парсер возобновил работу после перезапуска!")
     else:
         logger.info("⚠️ Требуется авторизация — отправьте /start")
-        await bot.send_message(
-            chat_id=YOUR_CHAT_ID,
-            text=(
-                "👋 Привет! Для запуска парсера требуется авторизация.\n\n"
-                "Отправьте команду /start чтобы получить код подтверждения."
-            )
-        )
+        await bot.send_message(YOUR_CHAT_ID, "👋 Отправьте /start для авторизации в Telegram")
     
-    # Запуск бота
-    logger.info("🤖 Бот ожидает команды /start")
+    logger.info("🤖 Бот ожидает команду /start")
     await dp.start_polling(bot, skip_updates=True)
 
 # ================== ТОЧКА ВХОДА ==================
